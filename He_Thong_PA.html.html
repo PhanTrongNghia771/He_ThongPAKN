@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <title>Hệ Thống Tiếp Nhận Thông Tin Huyện Cần Đước</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 0; background: #f9f9f9; }
+    header { background: #2c3e50; color: white; padding: 15px; text-align: center; }
+    .navbar {
+      background: #34495e;
+      padding: 10px;
+      display: flex;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+    .navbar button {
+      background: white;
+      border: none;
+      margin: 5px;
+      padding: 10px 15px;
+      cursor: pointer;
+      border-radius: 5px;
+    }
+    .form, #list, #adminPanel { padding: 15px; }
+    textarea, input, select { width: 100%; padding: 10px; margin: 10px 0; }
+    .item { background: white; padding: 10px; margin: 10px 0; border-left: 4px solid #2980b9; }
+    footer { text-align: center; background: #ddd; padding: 10px; font-size: 13px; }
+    .hidden { display: none; }
+  </style>
+
+  <!-- Firebase SDK -->
+  <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-database-compat.js"></script>
+  <script>
+    const firebaseConfig = {
+      databaseURL: "https://phan-anh-can-dioc-default-rtdb.firebaseio.com/"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+  </script>
+</head>
+<body>
+
+<header>
+  <h2>Hệ Thống Tiếp Nhận Thông Tin<br>Huyện Cần Đước</h2>
+</header>
+
+<div class="navbar">
+  <button onclick="showForm()">Gửi Phản Ánh</button>
+  <button onclick="filterDisplay(true)">Hiển Thị Công Khai</button>
+  <button onclick="showAdminPanel()">Quản Lý Phản Ánh</button>
+</div>
+
+<div class="form" id="form">
+  <textarea id="message" placeholder="Nội dung phản ánh..."></textarea>
+  <input type="file" id="imageInput" accept="image/*">
+  <select id="category">
+    <option disabled selected>Chọn lĩnh vực</option>
+    <option>1. Hạ Tầng Giao Thông</option>
+    <option>2. An Ninh Trật Tự An Toàn Xã Hội</option>
+    <option>3. Hạ Tầng Kỹ Thuật</option>
+    <option>4. Môi Trường</option>
+    <option>5. Hành Chính Công</option>
+  </select>
+  <select id="isPublic">
+    <option value="true">Hiển thị công khai</option>
+    <option value="false">Không công khai</option>
+  </select>
+  <button onclick="submit()">Gửi phản ánh</button>
+</div>
+
+<div id="list"></div>
+
+<div id="adminPanel" class="hidden">
+  <h3>Bảng Quản Lý Phản Ánh</h3>
+  <div id="adminList"></div>
+  <button onclick="logout()">Thoát quản trị</button>
+</div>
+
+<footer>Bản quyền thuộc Thông tin Long An</footer>
+
+<script>
+  let isLoggedIn = false;
+
+  function showForm() {
+    document.getElementById("form").scrollIntoView({ behavior: 'smooth' });
+  }
+
+  function submit() {
+    const message = document.getElementById("message").value.trim();
+    const category = document.getElementById("category").value;
+    const isPublic = document.getElementById("isPublic").value === "true";
+
+    if (!message || category === "Chọn lĩnh vực") {
+      alert("Vui lòng điền nội dung và chọn lĩnh vực.");
+      return;
+    }
+
+    const imageInput = document.getElementById("imageInput");
+    const file = imageInput.files[0];
+
+    const report = {
+      message,
+      category,
+      isPublic,
+      reply: "",
+      imageUrl: ""
+    };
+
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        report.imageUrl = e.target.result;
+        firebase.database().ref("reports").push(report);
+        alert("Đã gửi phản ánh!");
+        document.getElementById("message").value = "";
+        fetchReports();
+      };
+      reader.readAsDataURL(file);
+    } else {
+      firebase.database().ref("reports").push(report);
+      alert("Đã gửi phản ánh!");
+      document.getElementById("message").value = "";
+      fetchReports();
+    }
+  }
+
+  function fetchReports() {
+    firebase.database().ref("reports").once("value", snapshot => {
+      const list = document.getElementById("list");
+      list.innerHTML = "";
+      const adminList = document.getElementById("adminList");
+      if (isLoggedIn) adminList.innerHTML = "";
+
+      snapshot.forEach(child => {
+        const r = child.val();
+        const key = child.key;
+
+        if (r.isPublic) {
+          const div = document.createElement("div");
+          div.className = "item";
+          div.innerHTML = `<b>Lĩnh vực:</b> ${r.category}<br><b>Nội dung:</b> ${r.message}${r.imageUrl ? `<br><img src="${r.imageUrl}" style="max-width:100%;margin-top:5px;">` : ""}${r.reply ? "<br><b>Trả lời:</b> " + r.reply : ""}`;
+          list.appendChild(div);
+        }
+
+        if (isLoggedIn) {
+          const adminDiv = document.createElement("div");
+          adminDiv.className = "item";
+          adminDiv.innerHTML = `<b>Lĩnh vực:</b> ${r.category}<br><b>Nội dung:</b> ${r.message}<br>
+            <textarea placeholder="Trả lời..." oninput="reply('${key}', this.value)">${r.reply}</textarea>${r.imageUrl ? `<br><img src="${r.imageUrl}" style="max-width:100%;margin-top:5px;">` : ""}`;
+          adminList.appendChild(adminDiv);
+        }
+      });
+    });
+  }
+
+  function reply(key, text) {
+    firebase.database().ref("reports/" + key).update({ reply: text });
+  }
+
+  function filterDisplay(showPublic) {
+    firebase.database().ref("reports").once("value", snapshot => {
+      const list = document.getElementById("list");
+      list.innerHTML = "";
+
+      snapshot.forEach(child => {
+        const r = child.val();
+        if (r.isPublic === showPublic) {
+          const div = document.createElement("div");
+          div.className = "item";
+          div.innerHTML = `<b>Lĩnh vực:</b> ${r.category}<br><b>Nội dung:</b> ${r.message}${r.imageUrl ? `<br><img src="${r.imageUrl}" style="max-width:100%;margin-top:5px;">` : ""}${r.reply ? "<br><b>Trả lời:</b> " + r.reply : ""}`;
+          list.appendChild(div);
+        }
+      });
+    });
+  }
+
+  function showAdminPanel() {
+    if (isLoggedIn) {
+      document.getElementById("adminPanel").classList.remove("hidden");
+      fetchReports();
+      return;
+    }
+    const pw = prompt("Nhập mật khẩu quản trị:");
+    if (pw === "261209") {
+      isLoggedIn = true;
+      document.getElementById("adminPanel").classList.remove("hidden");
+      fetchReports();
+    } else {
+      alert("Sai mật khẩu!");
+    }
+  }
+
+  function logout() {
+    isLoggedIn = false;
+    document.getElementById("adminPanel").classList.add("hidden");
+    alert("Đã thoát quản trị!");
+  }
+
+  // Tự động tải dữ liệu khi mở trang
+  fetchReports();
+</script>
+
+</body>
+</html>
